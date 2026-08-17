@@ -100,8 +100,22 @@ type ChannelModelPricing struct {
 	ImageOutputPrice *float64          // 图片输出价格（向后兼容）
 	PerRequestPrice  *float64          // 默认按次计费价格（USD）
 	Intervals        []PricingInterval // 区间定价列表
+	TimePricing      *ChannelTimePricing
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+// ChannelTimePricing 渠道模型定价的分时倍率配置。
+type ChannelTimePricing struct {
+	Timezone string                     `json:"timezone"`
+	Periods  []ChannelTimePricingPeriod `json:"periods"`
+}
+
+// ChannelTimePricingPeriod 是秒级的左闭右开分时倍率区间，并兼容历史 HH:mm 数据。
+type ChannelTimePricingPeriod struct {
+	StartTime  string  `json:"start_time"`
+	EndTime    string  `json:"end_time"`
+	Multiplier float64 `json:"multiplier"`
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
@@ -194,6 +208,12 @@ func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	if p.Intervals != nil {
 		cp.Intervals = make([]PricingInterval, len(p.Intervals))
 		copy(cp.Intervals, p.Intervals)
+	}
+	if p.TimePricing != nil {
+		cp.TimePricing = &ChannelTimePricing{Timezone: p.TimePricing.Timezone}
+		if p.TimePricing.Periods != nil {
+			cp.TimePricing.Periods = append([]ChannelTimePricingPeriod(nil), p.TimePricing.Periods...)
+		}
 	}
 	return cp
 }
