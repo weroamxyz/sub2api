@@ -7,11 +7,13 @@ const {
   probeUpstreamBillingMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
+  authIsSimpleMode,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
+  authIsSimpleMode: { value: true },
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -23,7 +25,11 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ isSimpleMode: true }),
+  useAuthStore: () => ({
+    get isSimpleMode() {
+      return authIsSimpleMode.value
+    },
+  }),
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -181,6 +187,7 @@ async function openCodexImportStep(toggleClicks = 0) {
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
+    authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     importCodexSessionMock.mockReset().mockResolvedValue({

@@ -96,6 +96,8 @@ type ChannelModelPricing struct {
 	OutputPrice      *float64          // 每 token 输出价格（USD）
 	CacheWritePrice  *float64          // 缓存写入价格
 	CacheReadPrice   *float64          // 缓存读取价格
+	FastMultiplier   *float64          // Fast/priority service tier 倍率
+	FlexMultiplier   *float64          // Flex service tier 倍率
 	ImageInputPrice  *float64          // 图片输入 token 价格（如 gpt-image-2 图片编辑）；未配置时回退文本输入价
 	ImageOutputPrice *float64          // 图片输出价格（向后兼容）
 	PerRequestPrice  *float64          // 默认按次计费价格（USD）
@@ -120,19 +122,23 @@ type ChannelTimePricingPeriod struct {
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID              int64
-	PricingID       int64
-	MinTokens       int      // 区间下界（含）
-	MaxTokens       *int     // 区间上界（不含），nil = 无上限
-	TierLabel       string   // 层级标签（按次/图片模式：1K, 2K, 4K, HD 等）
-	InputPrice      *float64 // token 模式：每 token 输入价
-	OutputPrice     *float64 // token 模式：每 token 输出价
-	CacheWritePrice *float64 // token 模式：缓存写入价
-	CacheReadPrice  *float64 // token 模式：缓存读取价
-	PerRequestPrice *float64 // 按次/图片模式：每次请求价格
-	SortOrder       int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                   int64
+	PricingID            int64
+	MinTokens            int      // 区间下界（含）
+	MaxTokens            *int     // 区间上界（不含），nil = 无上限
+	TierLabel            string   // 层级标签（按次/图片模式：1K, 2K, 4K, HD 等）
+	InputPrice           *float64 // token 模式：每 token 输入价
+	OutputPrice          *float64 // token 模式：每 token 输出价
+	CacheWritePrice      *float64 // token 模式：缓存写入价
+	CacheReadPrice       *float64 // token 模式：缓存读取价
+	InputMultiplier      *float64 // token 模式：输入价倍率
+	OutputMultiplier     *float64 // token 模式：输出价倍率
+	CacheWriteMultiplier *float64 // token 模式：缓存写入价倍率
+	CacheReadMultiplier  *float64 // token 模式：缓存读取价倍率
+	PerRequestPrice      *float64 // 按次/图片模式：每次请求价格
+	SortOrder            int
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // IsActive 判断渠道是否启用
@@ -358,7 +364,7 @@ func validateSingleInterval(iv *PricingInterval, idx int) error {
 	return validateIntervalPrices(iv, idx)
 }
 
-// validateIntervalPrices 校验区间内所有价格字段 >= 0
+// validateIntervalPrices 校验区间价格 >= 0、倍率 > 0。
 func validateIntervalPrices(iv *PricingInterval, idx int) error {
 	prices := []struct {
 		name string
@@ -373,6 +379,20 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 	for _, p := range prices {
 		if p.val != nil && *p.val < 0 {
 			return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+		}
+	}
+	multipliers := []struct {
+		name string
+		val  *float64
+	}{
+		{"input_multiplier", iv.InputMultiplier},
+		{"output_multiplier", iv.OutputMultiplier},
+		{"cache_write_multiplier", iv.CacheWriteMultiplier},
+		{"cache_read_multiplier", iv.CacheReadMultiplier},
+	}
+	for _, multiplier := range multipliers {
+		if multiplier.val != nil && *multiplier.val <= 0 {
+			return fmt.Errorf("interval #%d: %s must be > 0", idx+1, multiplier.name)
 		}
 	}
 	return nil
