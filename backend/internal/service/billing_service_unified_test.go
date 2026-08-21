@@ -186,6 +186,7 @@ func channelTimeResolvedForTest(base *ModelPricing, intervals []PricingInterval)
 				}},
 			},
 		},
+		longContextPricingEnabled: true,
 	}
 }
 
@@ -250,9 +251,9 @@ func TestCalculateCostUnified_ChannelTimePricingScalesBaseOnUnmatchedInterval(t 
 	require.InDelta(t, 2.0, cost.TotalCost, 1e-12)
 }
 
-func TestCalculateCostUnified_ChannelTimePricingDoesNotApplyToNonChannelPricing(t *testing.T) {
+func TestCalculateCostUnified_ChannelTimePricingDoesNotApplyToGroupPricing(t *testing.T) {
 	resolved := channelTimeResolvedForTest(&ModelPricing{InputPricePerToken: 0.001}, nil)
-	resolved.Source = PricingSourceLiteLLM
+	resolved.Source = PricingSourceGroup
 	billing := NewBillingService(&config.Config{}, nil)
 
 	cost, err := billing.CalculateCostUnified(CostInput{

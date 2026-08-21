@@ -201,6 +201,34 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
   })
 
+  it('hides only the redundant account toggle when every selected group enables tier pricing', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal([
+      { id: 1, long_context_pricing_enabled: true },
+      { id: 2, long_context_pricing_enabled: true },
+    ])
+
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="openai-long-context-billing-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(true)
+  })
+
+  it('keeps the account toggle when any selected group disables tier pricing', async () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal([
+      { id: 1, long_context_pricing_enabled: true },
+      { id: 2, long_context_pricing_enabled: false },
+    ])
+
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="openai-long-context-billing-toggle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(true)
+  })
+
   it('sends false explicitly for normal OpenAI account creation by default', async () => {
     await submitApiKeyAccount('openai')
 
