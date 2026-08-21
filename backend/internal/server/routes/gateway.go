@@ -172,6 +172,12 @@ func RegisterGatewayRoutes(
 		}
 	}
 
+	// Signed Grok video content URLs are intentionally separate from the
+	// authenticated /videos/:request_id/content route. This preserves existing
+	// API-key behavior while allowing downstream routers to fetch returned URLs
+	// without knowing the caller's key.
+	r.GET("/v1/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, h.OpenAIGateway.GrokVideoContentSigned)
+
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	gateway.Use(bodyLimit)
@@ -399,6 +405,7 @@ func RegisterGatewayRoutes(
 	r.GET("/videos/edits/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
 	r.GET("/videos/extensions/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
 	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
+	r.GET("/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, h.OpenAIGateway.GrokVideoContentSigned)
 	r.GET("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {

@@ -5702,6 +5702,115 @@
                 <Toggle v-model="form.openai_codex_version_auto_sync_enabled" />
               </div>
 
+              <!-- Grok video signed content URLs -->
+              <div
+                class="border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-testid="grok-media-signed-content-url-settings"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label
+                      class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentURL",
+                        )
+                      }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentURLHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="
+                      form.grok_media_signed_content_url_settings.enabled
+                    "
+                    :aria-label="
+                      t(
+                        'admin.settings.gatewayForwarding.grokSignedContentURL',
+                      )
+                    "
+                    data-testid="grok-media-signed-content-url-enabled"
+                  />
+                </div>
+
+                <div
+                  v-if="form.grok_media_signed_content_url_settings.enabled"
+                  class="mt-4 grid gap-4 md:grid-cols-2"
+                >
+                  <div>
+                    <label
+                      for="grok-media-signed-content-ttl"
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentTTL",
+                        )
+                      }}
+                    </label>
+                    <input
+                      id="grok-media-signed-content-ttl"
+                      v-model.number="
+                        form.grok_media_signed_content_url_settings.ttl_seconds
+                      "
+                      type="number"
+                      min="1"
+                      step="60"
+                      class="input w-full max-w-xs"
+                      data-testid="grok-media-signed-content-url-ttl"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentTTLHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      for="grok-media-signed-content-public-base-url"
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURL",
+                        )
+                      }}
+                    </label>
+                    <input
+                      id="grok-media-signed-content-public-base-url"
+                      v-model="
+                        form.grok_media_signed_content_url_settings
+                          .public_base_url
+                      "
+                      type="url"
+                      class="input w-full font-mono text-sm"
+                      :placeholder="
+                        t(
+                          'admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLPlaceholder',
+                        )
+                      "
+                      data-testid="grok-media-signed-content-url-public-base"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -8676,6 +8785,7 @@ import type {
   UpdateSettingsRequest,
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
+  GrokMediaSignedContentURLSettings,
   OpenAIFastPolicyRule,
   WeChatConnectMode,
   WebSearchEmulationConfig,
@@ -8738,6 +8848,17 @@ const isZhLocale = computed(() => locale.value.startsWith("zh"));
 
 function localText(zh: string, en: string): string {
   return isZhLocale.value ? zh : en;
+}
+
+function normalizeGrokMediaSignedContentURLSettings(
+  settings?: Partial<GrokMediaSignedContentURLSettings> | null,
+): GrokMediaSignedContentURLSettings {
+  const ttlSeconds = Math.floor(Number(settings?.ttl_seconds));
+  return {
+    enabled: settings?.enabled === true,
+    ttl_seconds: Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds : 3600,
+    public_base_url: String(settings?.public_base_url || "").trim().replace(/\/+$/, ""),
+  };
 }
 
 const paymentGuideHref = computed(() =>
@@ -9407,6 +9528,7 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_upstream_cost: string;
   openai_advanced_scheduler_weight_previous_response: string;
   openai_advanced_scheduler_weight_session_sticky: string;
+  grok_media_signed_content_url_settings: GrokMediaSignedContentURLSettings;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
@@ -9665,6 +9787,8 @@ const form = reactive<SettingsForm>({
   // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交（提交载荷按字段显式构造）
   openai_codex_client_version_synced: "",
   openai_codex_version_auto_sync_enabled: true,
+  grok_media_signed_content_url_settings:
+    normalizeGrokMediaSignedContentURLSettings(),
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -10701,6 +10825,10 @@ async function loadSettings() {
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
       settings.account_scheduling_thresholds,
     );
+    form.grok_media_signed_content_url_settings =
+      normalizeGrokMediaSignedContentURLSettings(
+        settings.grok_media_signed_content_url_settings,
+      );
     form.backend_mode_enabled = settings.backend_mode_enabled;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
@@ -11020,6 +11148,30 @@ async function saveSettings() {
     // Optional URL fields: auto-clear invalid values so they don't cause backend 400 errors
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
+    const grokSignedContentURLSettings =
+      normalizeGrokMediaSignedContentURLSettings(
+        form.grok_media_signed_content_url_settings,
+      );
+    if (
+      grokSignedContentURLSettings.enabled &&
+      (!Number.isInteger(grokSignedContentURLSettings.ttl_seconds) ||
+        grokSignedContentURLSettings.ttl_seconds <= 0)
+    ) {
+      appStore.showError(
+        t("admin.settings.gatewayForwarding.grokSignedContentTTLInvalid"),
+      );
+      return;
+    }
+    if (
+      grokSignedContentURLSettings.public_base_url &&
+      !isValidHttpUrl(grokSignedContentURLSettings.public_base_url)
+    ) {
+      appStore.showError(
+        t("admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLInvalid"),
+      );
+      return;
+    }
+    form.grok_media_signed_content_url_settings = grokSignedContentURLSettings;
     syncWeChatConnectMode();
     const wechatStoredMode = deriveWeChatConnectStoredMode(
       form.wechat_connect_open_enabled,
@@ -11239,6 +11391,8 @@ async function saveSettings() {
         form.openai_codex_client_version?.trim() || "",
       openai_codex_version_auto_sync_enabled:
         form.openai_codex_version_auto_sync_enabled,
+      grok_media_signed_content_url_settings:
+        grokSignedContentURLSettings,
       min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:
@@ -11399,6 +11553,10 @@ async function saveSettings() {
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
       updated.account_scheduling_thresholds,
     );
+    form.grok_media_signed_content_url_settings =
+      normalizeGrokMediaSignedContentURLSettings(
+        updated.grok_media_signed_content_url_settings,
+      );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,

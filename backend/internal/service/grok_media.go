@@ -3,9 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -35,6 +40,28 @@ const (
 	// Official xAI Imagine image-edit limit.
 	grokMediaMaxEditSourceImages = 3
 )
+
+const (
+	grokMediaSignedVideoContentTokenParam = "token"
+	grokMediaSignedVideoContentTokenV1    = 1
+	grokMediaSignedVideoContentMaxLen     = 4096
+)
+
+var (
+	ErrGrokMediaSignedContentDisabled = errors.New("grok media signed content URLs are disabled")
+	ErrGrokMediaSignedContentInvalid  = errors.New("invalid grok media signed content URL")
+	ErrGrokMediaSignedContentExpired  = errors.New("expired grok media signed content URL")
+	ErrGrokMediaSignedContentAccount  = errors.New("grok media signed content account is unavailable")
+)
+
+// GrokMediaSignedVideoContentClaims is the validated payload embedded in a
+// short-lived video content proxy URL.
+type GrokMediaSignedVideoContentClaims struct {
+	Version   int    `json:"v"`
+	RequestID string `json:"rid"`
+	AccountID int64  `json:"aid"`
+	ExpiresAt int64  `json:"exp"`
+}
 
 func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 	return !e.IsVideoLookupRequest()
@@ -709,12 +736,36 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 				ResponseHeaders: resp.Header.Clone(),
 			}
 		}
+		if rewritten, err := s.grokMediaObjectStorageImageResponse(ctx, requestIDHeader, respBody); err != nil {
+			slog.Warn("grok_media.object_storage_image_upload_failed",
+				"account_id", account.ID,
+				"request_id", requestIDHeader,
+				"error", err,
+			)
+		} else {
+			respBody = rewritten
+		}
 	}
 	if endpoint == GrokMediaEndpointVideoStatus {
+		proxyURL := grokMediaContentProxyURL(c, requestID)
+		if signedProxyURL, err := s.buildGrokMediaSignedVideoContentURL(c, requestID, account.ID, time.Now()); err != nil {
+			return nil, err
+		} else if signedProxyURL != "" {
+			proxyURL = signedProxyURL
+		}
+		if objectURL, err := s.grokMediaObjectStorageVideoURL(ctx, account, requestID, respBody); err != nil {
+			slog.Warn("grok_media.object_storage_upload_failed",
+				"account_id", account.ID,
+				"request_id", requestID,
+				"error", err,
+			)
+		} else if strings.TrimSpace(objectURL) != "" {
+			proxyURL = objectURL
+		}
 		respBody = rewriteGrokMediaVideoContentURLs(
 			respBody,
 			requestID,
-			grokMediaContentProxyURL(c, requestID),
+			proxyURL,
 		)
 	}
 	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
@@ -1465,6 +1516,14 @@ func isGrokMediaVideoContentURL(rawURL, requestID string) bool {
 }
 
 func grokMediaContentProxyURL(c *gin.Context, requestID string) string {
+	return grokMediaContentProxyPath(c, requestID, false)
+}
+
+func grokMediaSignedContentProxyPath(c *gin.Context, requestID string) string {
+	return grokMediaContentProxyPath(c, requestID, true)
+}
+
+func grokMediaContentProxyPath(c *gin.Context, requestID string, signed bool) string {
 	if c == nil || c.Request == nil || c.Request.URL == nil || strings.TrimSpace(requestID) == "" {
 		return ""
 	}
@@ -1472,5 +1531,197 @@ func grokMediaContentProxyURL(c *gin.Context, requestID string) string {
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/") {
 		pathPrefix = "/v1"
 	}
-	return pathPrefix + "/videos/" + url.PathEscape(strings.Trim(requestID, "/")) + "/content"
+	path := pathPrefix + "/videos/" + url.PathEscape(strings.Trim(requestID, "/")) + "/content"
+	if signed {
+		path += "/signed"
+	}
+	return path
+}
+
+func (s *OpenAIGatewayService) buildGrokMediaSignedVideoContentURL(c *gin.Context, requestID string, accountID int64, now time.Time) (string, error) {
+	ctx := context.Background()
+	if c != nil && c.Request != nil && c.Request.Context() != nil {
+		ctx = c.Request.Context()
+	}
+	settings := s.grokMediaSignedVideoContentSettings(ctx)
+	if settings == nil || !settings.Enabled {
+		return "", nil
+	}
+	requestID = strings.Trim(requestID, "/")
+	if requestID == "" || accountID <= 0 {
+		return "", fmt.Errorf("grok media signed content URL requires request and account")
+	}
+	ttlSeconds := settings.TTLSeconds
+	if ttlSeconds <= 0 {
+		return "", fmt.Errorf("gateway.grok_media.signed_content_url.ttl_seconds must be positive")
+	}
+	secret := s.grokMediaSignedVideoContentSecret()
+	if len(secret) == 0 {
+		return "", fmt.Errorf("gateway.grok_media.signed_content_url.secret or jwt.secret is required")
+	}
+	baseURL := s.grokMediaSignedVideoContentBaseURL(c, settings)
+	if baseURL == "" {
+		return "", fmt.Errorf("gateway.grok_media.signed_content_url.public_base_url is required when request host is unavailable")
+	}
+
+	token, err := signGrokMediaSignedVideoContentClaims(GrokMediaSignedVideoContentClaims{
+		Version:   grokMediaSignedVideoContentTokenV1,
+		RequestID: requestID,
+		AccountID: accountID,
+		ExpiresAt: now.Add(time.Duration(ttlSeconds) * time.Second).Unix(),
+	}, secret)
+	if err != nil {
+		return "", err
+	}
+	values := url.Values{}
+	values.Set(grokMediaSignedVideoContentTokenParam, token)
+	return strings.TrimRight(baseURL, "/") + grokMediaSignedContentProxyPath(c, requestID) + "?" + values.Encode(), nil
+}
+
+func (s *OpenAIGatewayService) grokMediaSignedVideoContentSettings(ctx context.Context) *GrokMediaSignedContentURLSettings {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s != nil && s.settingService != nil {
+		if settings, err := s.settingService.GetGrokMediaSignedContentURLSettings(ctx); err == nil && settings != nil {
+			return settings
+		}
+	}
+	if s == nil {
+		return DefaultGrokMediaSignedContentURLSettingsFromConfig(nil)
+	}
+	return DefaultGrokMediaSignedContentURLSettingsFromConfig(s.cfg)
+}
+
+func (s *OpenAIGatewayService) grokMediaSignedVideoContentSecret() []byte {
+	if s == nil || s.cfg == nil {
+		return nil
+	}
+	secret := strings.TrimSpace(s.cfg.Gateway.GrokMedia.SignedContentURL.Secret)
+	if secret == "" {
+		secret = strings.TrimSpace(s.cfg.JWT.Secret)
+	}
+	if secret == "" {
+		return nil
+	}
+	return []byte(secret)
+}
+
+func (s *OpenAIGatewayService) grokMediaSignedVideoContentBaseURL(c *gin.Context, settings *GrokMediaSignedContentURLSettings) string {
+	if settings != nil {
+		if baseURL := strings.TrimRight(strings.TrimSpace(settings.PublicBaseURL), "/"); baseURL != "" {
+			return baseURL
+		}
+	}
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	host := strings.TrimSpace(c.Request.Host)
+	if host == "" || strings.ContainsAny(host, "\r\n/") {
+		return ""
+	}
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + host
+}
+
+func signGrokMediaSignedVideoContentClaims(claims GrokMediaSignedVideoContentClaims, secret []byte) (string, error) {
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", fmt.Errorf("marshal grok media signed content claims: %w", err)
+	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
+	signature := signGrokMediaSignedVideoContentPayload(encodedPayload, secret)
+	return encodedPayload + "." + signature, nil
+}
+
+func signGrokMediaSignedVideoContentPayload(encodedPayload string, secret []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(encodedPayload))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// ValidateGrokMediaSignedVideoContentToken validates a signed content URL token
+// against the request ID from the current path.
+func (s *OpenAIGatewayService) ValidateGrokMediaSignedVideoContentToken(
+	ctx context.Context,
+	token string,
+	requestID string,
+	now time.Time,
+) (GrokMediaSignedVideoContentClaims, error) {
+	var claims GrokMediaSignedVideoContentClaims
+	settings := s.grokMediaSignedVideoContentSettings(ctx)
+	if settings == nil || !settings.Enabled {
+		return claims, ErrGrokMediaSignedContentDisabled
+	}
+	token = strings.TrimSpace(token)
+	requestID = strings.Trim(requestID, "/")
+	if token == "" || requestID == "" || len(token) > grokMediaSignedVideoContentMaxLen {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	payload, signature, ok := strings.Cut(token, ".")
+	if !ok || payload == "" || signature == "" || strings.Contains(signature, ".") {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	secret := s.grokMediaSignedVideoContentSecret()
+	if len(secret) == 0 {
+		return claims, ErrGrokMediaSignedContentDisabled
+	}
+	signatureBytes, err := base64.RawURLEncoding.DecodeString(signature)
+	if err != nil {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	expected, err := base64.RawURLEncoding.DecodeString(signGrokMediaSignedVideoContentPayload(payload, secret))
+	if err != nil {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	if !hmac.Equal(signatureBytes, expected) {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	if claims.Version != grokMediaSignedVideoContentTokenV1 ||
+		claims.RequestID != requestID ||
+		claims.AccountID <= 0 ||
+		claims.ExpiresAt <= 0 {
+		return claims, ErrGrokMediaSignedContentInvalid
+	}
+	if !now.Before(time.Unix(claims.ExpiresAt, 0)) {
+		return claims, ErrGrokMediaSignedContentExpired
+	}
+	return claims, nil
+}
+
+// ResolveGrokMediaSignedVideoContentAccount resolves the upstream account bound
+// into a validated signed video content URL.
+func (s *OpenAIGatewayService) ResolveGrokMediaSignedVideoContentAccount(
+	ctx context.Context,
+	requestID string,
+	token string,
+) (*Account, error) {
+	claims, err := s.ValidateGrokMediaSignedVideoContentToken(ctx, token, requestID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("grok media signed content account repository is unavailable")
+	}
+	account, err := s.accountRepo.GetByID(ctx, claims.AccountID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrGrokMediaSignedContentAccount, err)
+	}
+	if account == nil {
+		return nil, ErrGrokMediaSignedContentAccount
+	}
+	if account.Platform != PlatformGrok || !account.IsSchedulable() {
+		return nil, ErrGrokMediaSignedContentAccount
+	}
+	return account, nil
 }

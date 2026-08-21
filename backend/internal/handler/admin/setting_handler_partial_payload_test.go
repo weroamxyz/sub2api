@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/stretchr/testify/require"
@@ -185,4 +186,31 @@ func TestUpdateSettingsValidatesTencentCaptchaAppIDWhenEnabledFlagIsOmitted(t *t
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "positive integer")
+}
+
+func TestUpdateSettingsGrokMediaSignedContentURLSettingsPartialPayload(t *testing.T) {
+	repo := &settingHandlerRepoStub{values: map[string]string{
+		service.SettingKeySiteName: "Example Gateway",
+	}}
+	svc := service.NewSettingService(repo, &config.Config{
+		Default: config.DefaultConfig{UserConcurrency: 5},
+		JWT:     config.JWTConfig{Secret: "jwt-secret"},
+	})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"grok_media_signed_content_url_settings": map[string]any{
+			"enabled":         true,
+			"ttl_seconds":     900,
+			"public_base_url": "https://cdn.example.com/",
+		},
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "Example Gateway", repo.values[service.SettingKeySiteName])
+	require.JSONEq(t,
+		`{"enabled":true,"ttl_seconds":900,"public_base_url":"https://cdn.example.com"}`,
+		repo.values[service.SettingKeyGrokMediaSignedContentURLSettings],
+	)
+	require.Contains(t, rec.Body.String(), `"grok_media_signed_content_url_settings"`)
 }

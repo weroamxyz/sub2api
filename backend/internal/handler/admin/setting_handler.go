@@ -397,6 +397,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	} else if fastPolicy != nil {
 		payload.OpenAIFastPolicySettings = openaiFastPolicySettingsToDTO(fastPolicy)
 	}
+	if grokSignedContentURL, err := h.settingService.GetGrokMediaSignedContentURLSettings(c.Request.Context()); err != nil {
+		slog.Error("grok_media_signed_content_url_settings_get_failed", "error", err)
+	} else if grokSignedContentURL != nil {
+		payload.GrokMediaSignedContentURLSettings = grokMediaSignedContentURLSettingsToDTO(grokSignedContentURL)
+	}
 
 	// Default platform quotas（JSON map）
 	if platformQuotas, err := h.settingService.GetDefaultPlatformQuotas(c.Request.Context()); err != nil {
@@ -440,6 +445,28 @@ func openaiFastPolicySettingsFromDTO(s *dto.OpenAIFastPolicySettings) *service.O
 		rules[i].ServiceTier = tier
 	}
 	return &service.OpenAIFastPolicySettings{Rules: rules}
+}
+
+func grokMediaSignedContentURLSettingsToDTO(s *service.GrokMediaSignedContentURLSettings) *dto.GrokMediaSignedContentURLSettings {
+	if s == nil {
+		return nil
+	}
+	return &dto.GrokMediaSignedContentURLSettings{
+		Enabled:       s.Enabled,
+		TTLSeconds:    s.TTLSeconds,
+		PublicBaseURL: s.PublicBaseURL,
+	}
+}
+
+func grokMediaSignedContentURLSettingsFromDTO(s *dto.GrokMediaSignedContentURLSettings) *service.GrokMediaSignedContentURLSettings {
+	if s == nil {
+		return nil
+	}
+	return &service.GrokMediaSignedContentURLSettings{
+		Enabled:       s.Enabled,
+		TTLSeconds:    s.TTLSeconds,
+		PublicBaseURL: s.PublicBaseURL,
+	}
 }
 
 func loginAgreementDocumentsToDTO(items []service.LoginAgreementDocument) []dto.LoginAgreementDocument {

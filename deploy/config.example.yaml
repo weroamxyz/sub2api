@@ -225,6 +225,61 @@ gateway:
   # Max bytes to read for proxy probe responses (default: 1MB)
   # 代理探测响应体读取上限（默认 1MB）
   proxy_probe_response_read_max_bytes: 1048576
+  # Grok image/video compatibility settings
+  # Grok 图片/视频兼容配置
+  grok_media:
+    signed_content_url:
+      # Return short-lived signed proxy URLs for video.url in video status responses.
+      # When disabled, video.url keeps using the authenticated /videos/{id}/content proxy path.
+      # 视频状态响应中是否返回短期签名代理地址；关闭时保持原有需鉴权的内容代理路径。
+      enabled: false
+      # Signed video content URL lifetime in seconds.
+      # 签名视频内容 URL 有效期（秒）。
+      ttl_seconds: 3600
+      # Signing secret. Empty uses jwt.secret.
+      # 签名密钥；为空时复用 jwt.secret。
+      secret: ""
+      # Externally reachable API base URL, for example https://api.example.com.
+      # Leave empty to derive from the request Host.
+      # 外部可访问的 API 基础地址，例如 https://api.example.com；为空时从请求 Host 推导。
+      public_base_url: ""
+    object_storage:
+      # Upload completed Grok videos and Grok image outputs to S3-compatible
+      # object storage, then return object/CDN URLs in gateway responses. Bunny Storage can be used
+      # here when its S3-compatible API is enabled for the Storage Zone.
+      # 将已完成的 Grok 视频和 Grok 图片结果上传到 S3 兼容对象存储，并在网关响应中返回对象/CDN 地址。
+      # Bunny Storage 开启 S3-compatible API 后可填写在这里。
+      enabled: false
+      # S3-compatible endpoint. For Bunny, use the endpoint shown in the
+      # Storage Zone S3 settings.
+      # S3 兼容端点；Bunny 请填写 Storage Zone S3 设置中显示的 endpoint。
+      endpoint: ""
+      # Region. Bunny/S3-compatible providers commonly use "auto" or the value
+      # shown by the provider.
+      # 区域；Bunny/S3 兼容存储通常使用 "auto" 或服务商显示的区域。
+      region: "auto"
+      bucket: ""
+      access_key_id: ""
+      secret_access_key: ""
+      # Object key prefix. Final video keys are prefix + videos/{request_id}.mp4;
+      # image keys are prefix + images/{request_id}-{index}.{ext}.
+      # 对象 key 前缀；视频路径为 prefix + videos/{request_id}.mp4；
+      # 图片路径为 prefix + images/{request_id}-{index}.{ext}。
+      prefix: "grok-media/"
+      # Enable for providers that require path-style S3 requests.
+      # 需要 path-style 访问的 S3 兼容存储设为 true。
+      force_path_style: false
+      # Public CDN/Pull Zone base URL. When set, users receive public_base_url/key.
+      # When empty, the service returns a presigned S3 URL.
+      # 公开 CDN/Pull Zone 地址；填写后用户拿到 public_base_url/key。
+      # 留空则返回 S3 presigned 临时链接。
+      public_base_url: ""
+      # Presigned URL lifetime when public_base_url is empty.
+      # public_base_url 为空时，presigned 链接有效期（小时）。
+      presign_expiry_hours: 24
+      # Max video bytes to download from xAI before upload.
+      # 从 xAI 下载并转存的视频最大字节数。
+      max_download_bytes: 536870912
   # Enable Gemini upstream response header debug logs (default: false)
   # 是否开启 Gemini 上游响应头调试日志（默认 false）
   gemini_debug_response_headers: false

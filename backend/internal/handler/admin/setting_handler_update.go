@@ -359,6 +359,9 @@ type UpdateSettingsRequest struct {
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
+	// Grok video signed content URL behavior (optional, only updated when provided)
+	GrokMediaSignedContentURLSettings *dto.GrokMediaSignedContentURLSettings `json:"grok_media_signed_content_url_settings,omitempty"`
+
 	// 系统全局 platform quota 默认值（整体替换语义：nil = 不修改，non-nil = 整体覆盖）。
 	DefaultPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"default_platform_quotas"`
 
@@ -2033,6 +2036,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.GrokMediaSignedContentURLSettings != nil {
+		if err := h.settingService.SetGrokMediaSignedContentURLSettings(c.Request.Context(), grokMediaSignedContentURLSettingsFromDTO(req.GrokMediaSignedContentURLSettings)); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
 
 	// Update payment configuration (integrated into system settings).
 	// Skip if no payment fields were provided (prevents accidental wipe).
@@ -2365,6 +2374,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
 	} else if fastPolicy != nil {
 		payload.OpenAIFastPolicySettings = openaiFastPolicySettingsToDTO(fastPolicy)
+	}
+	if grokSignedContentURL, err := h.settingService.GetGrokMediaSignedContentURLSettings(c.Request.Context()); err != nil {
+		slog.Error("grok_media_signed_content_url_settings_get_failed", "error", err)
+	} else if grokSignedContentURL != nil {
+		payload.GrokMediaSignedContentURLSettings = grokMediaSignedContentURLSettingsToDTO(grokSignedContentURL)
 	}
 
 	// Default platform quotas（JSON map）—— 与 GetSettings 一致，避免保存后响应缺失该字段

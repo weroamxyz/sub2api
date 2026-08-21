@@ -1012,6 +1012,70 @@ func TestForwardGrokMediaImagesGenerationNormalizesImagineAlias(t *testing.T) {
 	require.Equal(t, ImageBillingSize2K, result.ImageSize)
 }
 
+func TestForwardGrokMediaImagesGenerationUploadsImageToObjectStorage(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok-imagine","prompt":"draw a cat"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          61,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://xai.test/v1",
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":   []string{"application/json"},
+			"Xai-Request-Id": []string{"xai-image-req"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"}]}`)),
+	}}
+	storage := &grokMediaObjectStorageStub{}
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			GrokMedia: config.GatewayGrokMediaConfig{
+				ObjectStorage: config.GatewayGrokMediaObjectStorageConfig{
+					Enabled:         true,
+					Region:          "auto",
+					Bucket:          "grok-media",
+					AccessKeyID:     "ak",
+					SecretAccessKey: "sk",
+					Prefix:          "grok/",
+					PublicBaseURL:   "https://cdn.example.com",
+					MaxDownloadByte: 1024,
+				},
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc.SetGrokMediaObjectStorageFactory(func(context.Context, *config.ImageStorageConfig) (ImageStorage, error) {
+		return storage, nil
+	})
+
+	result, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesGenerations, "", body, "application/json")
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "https://cdn.example.com/grok/images/xai-image-req-0.png", gjson.Get(recorder.Body.String(), "data.0.url").String())
+	require.False(t, gjson.Get(recorder.Body.String(), "data.0.b64_json").Exists())
+	require.Equal(t, "grok/images/xai-image-req-0.png", storage.key)
+	require.Equal(t, "image/png", storage.contentType)
+	require.NotEmpty(t, storage.data)
+	require.Equal(t, "xai-image-req", result.RequestID)
+	require.Equal(t, 1, result.ImageCount)
+}
+
 func TestForwardGrokMediaAppliesAccountModelMappingAfterEndpointNormalization(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)

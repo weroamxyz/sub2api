@@ -133,6 +133,12 @@ export interface WeChatConnectModeOption {
   labelEn: string;
 }
 
+export interface GrokMediaSignedContentURLSettings {
+  enabled: boolean;
+  ttl_seconds: number;
+  public_base_url: string;
+}
+
 const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "email",
   "linuxdo",
@@ -727,6 +733,9 @@ export interface SystemSettings {
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
+  // Grok video signed content URL behavior
+  grok_media_signed_content_url_settings?: GrokMediaSignedContentURLSettings;
+
   // Allow user view error requests
   allow_user_view_error_requests: boolean;
 }
@@ -1024,6 +1033,9 @@ export interface UpdateSettingsRequest {
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
+
+  // Grok video signed content URL behavior
+  grok_media_signed_content_url_settings?: GrokMediaSignedContentURLSettings;
 
   allow_user_view_error_requests?: boolean;
 }
