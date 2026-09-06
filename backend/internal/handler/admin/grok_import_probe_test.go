@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,23 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+type concurrentLogBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *concurrentLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *concurrentLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
+}
 
 type grokImportProbeStub struct {
 	mu           sync.Mutex
@@ -262,7 +280,7 @@ func TestGrokImportProbeSchedulerSkipsMissingServiceAndNonGrokAccounts(t *testin
 }
 
 func TestGrokImportProbeFailureLogDoesNotIncludeErrorMessage(t *testing.T) {
-	var logs bytes.Buffer
+	var logs concurrentLogBuffer
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	defer slog.SetDefault(previousLogger)
@@ -274,7 +292,7 @@ func TestGrokImportProbeFailureLogDoesNotIncludeErrorMessage(t *testing.T) {
 	awaitGrokProbeSignal(t, prober.done)
 
 	require.Eventually(t, func() bool {
-		return bytes.Contains(logs.Bytes(), []byte("grok_import_active_probe_failed"))
+		return strings.Contains(logs.String(), "grok_import_active_probe_failed")
 	}, time.Second, 10*time.Millisecond)
 	require.Contains(t, logs.String(), "GROK_TEST_PROBE_FAILED")
 	require.NotContains(t, logs.String(), "refresh-token-secret")
