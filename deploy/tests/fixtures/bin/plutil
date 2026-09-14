@@ -12,6 +12,11 @@ case "${path}" in
         [[ -n "${label}" ]]
         printf '{"org.sub2api.stack":"%s"}\n' "${label}"
         ;;
+    0.configuration.ipv4Subnet)
+        subnet=$(printf '%s' "${input}" | sed -n 's/.*"ipv4Subnet":"\([^"]*\)".*/\1/p')
+        [[ -n "${subnet}" ]]
+        printf '%s\n' "${subnet}"
+        ;;
     0.status.networks.0.ipv4Address)
         address=$(printf '%s' "${input}" | sed -n 's/.*"ipv4Address":"\([^"]*\)".*/\1/p')
         [[ -n "${address}" ]]
