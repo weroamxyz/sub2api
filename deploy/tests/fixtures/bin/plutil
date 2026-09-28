@@ -7,6 +7,11 @@ path=${2-}
 input=$(cat)
 
 case "${path}" in
+    0.id)
+        image_id=$(printf '%s' "${input}" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+        [[ -n "${image_id}" ]]
+        printf '%s\n' "${image_id}"
+        ;;
     0.configuration.labels)
         label=$(printf '%s' "${input}" | sed -n 's/.*"org.sub2api.stack":"\([^"]*\)".*/\1/p')
         [[ -n "${label}" ]]
