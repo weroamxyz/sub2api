@@ -69,6 +69,23 @@ jobs:
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" plan "${args[@]}"
+      - name: Guard fork release tag
+        # The fork publishes only vX.Y.Z-ace.N full releases: an upstream tag pushed by
+        # mistake would otherwise become Latest, and simple releases carry no binaries
+        # for the in-app updater.
+        if: github.repository == 'Simooonn/sub2api' && steps.plan.outputs.dry_run != 'true'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          SIMPLE: ${{ steps.plan.outputs.simple }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-ace\.[1-9][0-9]*$ ]]; then
+            echo "::error::Fork release tag must look like vX.Y.Z-ace.N, got '$TAG'"
+            exit 1
+          fi
+          if [[ "$SIMPLE" != false ]]; then
+            echo "::error::Fork releases must not use simple mode (no binaries for the in-app updater)"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: release-tooling
