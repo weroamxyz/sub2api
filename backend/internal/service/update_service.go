@@ -637,7 +637,8 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 	_ = s.cache.SetUpdateInfo(ctx, string(data), time.Duration(updateCacheTTL)*time.Second)
 }
 
-// compareVersions compares two semantic versions
+// compareVersions compares two semantic versions; on equal x.y.z, fork releases
+// (-ace.N) rank by N above the plain upstream release.
 func compareVersions(current, latest string) int {
 	currentParts := parseVersion(current)
 	latestParts := parseVersion(latest)
@@ -649,6 +650,14 @@ func compareVersions(current, latest string) int {
 		if currentParts[i] > latestParts[i] {
 			return 1
 		}
+	}
+
+	currentFork, latestFork := parseForkSuffix(current), parseForkSuffix(latest)
+	if currentFork < latestFork {
+		return -1
+	}
+	if currentFork > latestFork {
+		return 1
 	}
 	return 0
 }

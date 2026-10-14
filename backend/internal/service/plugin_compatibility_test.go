@@ -29,6 +29,19 @@ func TestEvaluatePluginCompatibility(t *testing.T) {
 	assert.Equal(t, "incompatible", result.Status)
 }
 
+func TestEvaluatePluginCompatibilityTreatsForkReleaseAsUpstreamBase(t *testing.T) {
+	manifest := testPluginManifest(nil)
+	manifest.Requires.Sub2API = ">=0.2.16"
+	manifest.Requires.TestedSub2APIVersions = []string{"0.2.16"}
+
+	result := EvaluatePluginCompatibility(manifest, PluginHostInfo{Version: "0.2.16-ace.1", BuildType: "release"})
+
+	require.True(t, result.Compatible)
+	assert.True(t, result.Tested)
+	assert.Equal(t, "compatible", result.Status)
+	assert.Equal(t, "0.2.16-ace.1", result.CurrentSub2API)
+}
+
 func TestEvaluatePluginCompatibilityRejectsProtocolMismatch(t *testing.T) {
 	manifest := testPluginManifest(nil)
 	manifest.Requires.PluginProtocol = pluginv1.ProtocolVersion + 1

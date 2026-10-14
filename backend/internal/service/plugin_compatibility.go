@@ -29,14 +29,17 @@ func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) P
 		result.Message = "插件协议版本与当前 Sub2API 不兼容"
 		return result
 	}
-	if !matchesSemverRange(host.Version, manifest.Requires.Sub2API) {
+	// Fork releases (x.y.z-ace.N) are judged as their upstream base; semver would
+	// otherwise treat the suffix as a prerelease that sorts below x.y.z.
+	hostVersion := stripForkVersionSuffix(host.Version)
+	if !matchesSemverRange(hostVersion, manifest.Requires.Sub2API) {
 		result.Status = "incompatible"
 		result.Message = fmt.Sprintf("当前 Sub2API %s 不满足插件要求 %s", host.Version, manifest.Requires.Sub2API)
 		return result
 	}
 	result.Compatible = true
 	for _, tested := range manifest.Requires.TestedSub2APIVersions {
-		if normalizeSemver(tested) == normalizeSemver(host.Version) {
+		if normalizeSemver(tested) == normalizeSemver(hostVersion) {
 			result.Tested = true
 			break
 		}
