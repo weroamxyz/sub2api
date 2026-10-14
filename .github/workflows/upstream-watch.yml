@@ -1,0 +1,106 @@
+name: Upstream Watch
+
+# Notify a Lark group when Wei-Shaw/sub2api main has commits this fork does not have yet.
+on:
+  schedule:
+    - cron: '23 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Send even if this upstream commit was already notified'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: github.repository == 'Simooonn/sub2api'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      UPSTREAM: Wei-Shaw/sub2api
+      FORK: ${{ github.repository }}
+    steps:
+      - name: Compare fork main with upstream main
+        id: cmp
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:main...${UPSTREAM%%/*}:main" > compare.json
+          gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name > upstream-release.txt || echo unknown > upstream-release.txt
+          gh api "repos/$FORK/releases/latest" --jq .tag_name > fork-release.txt || echo none > fork-release.txt
+          echo "ahead=$(jq -r .ahead_by compare.json)" >> "$GITHUB_OUTPUT"
+          echo "head=$(jq -r '.commits[-1].sha // ""' compare.json)" >> "$GITHUB_OUTPUT"
+          echo "Upstream is $(jq -r .ahead_by compare.json) commit(s) ahead of $FORK"
+
+      - name: Check whether this upstream head was already notified
+        id: seen
+        if: steps.cmp.outputs.ahead != '0'
+        uses: actions/cache/restore@v6
+        with:
+          path: .upstream-watch
+          key: upstream-watch-${{ steps.cmp.outputs.head }}
+          lookup-only: true
+
+      - name: Notify Lark
+        if: steps.cmp.outputs.ahead != '0' && (steps.seen.outputs.cache-hit != 'true' || inputs.force)
+        env:
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          LARK_WEBHOOK_SECRET: ${{ secrets.LARK_WEBHOOK_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, hmac, json, os, sys, time, urllib.request
+
+          webhook = os.environ.get("LARK_WEBHOOK_URL", "")
+          if not webhook:
+              sys.exit("LARK_WEBHOOK_URL secret is not set")
+          upstream, fork = os.environ["UPSTREAM"], os.environ["FORK"]
+          cmp = json.load(open("compare.json"))
+          ahead, commits = cmp["ahead_by"], cmp["commits"]
+
+          lines = [
+              f"上游 {upstream} 的 main 比 {fork} 超前 {ahead} 个提交",
+              f"上游最新 Release：{open('upstream-release.txt').read().strip()}；你的最新 Release：{open('fork-release.txt').read().strip()}",
+              "最近的上游提交：",
+          ]
+          for c in reversed(commits[-10:]):
+              lines.append(f"• {c['sha'][:7]} {c['commit']['message'].splitlines()[0][:100]}")
+          if ahead > 10:
+              lines.append(f"…另有 {ahead - 10} 个更早的提交")
+          compare_url = f"https://github.com/{fork}/compare/main...{upstream.replace('/', ':')}:main"
+
+          content = [[{"tag": "text", "text": line}] for line in lines]
+          content.append([{"tag": "a", "text": "在 GitHub 查看差异", "href": compare_url}])
+          payload = {"msg_type": "post", "content": {"post": {"zh_cn": {"title": "[sub2api] 上游有新提交", "content": content}}}}
+
+          secret = os.environ.get("LARK_WEBHOOK_SECRET", "")
+          if secret:
+              ts = str(int(time.time()))
+              sign = hmac.new(f"{ts}\n{secret}".encode(), b"", hashlib.sha256).digest()
+              payload.update(timestamp=ts, sign=base64.b64encode(sign).decode())
+
+          req = urllib.request.Request(webhook, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+          resp = json.load(urllib.request.urlopen(req, timeout=15))
+          if resp.get("code", resp.get("StatusCode", 0)) != 0:
+              sys.exit(f"Lark rejected the message: {resp}")
+          print("Lark notified")
+          PY
+
+      - name: Remember notified upstream head
+        if: steps.cmp.outputs.ahead != '0' && steps.seen.outputs.cache-hit != 'true'
+        env:
+          HEAD_SHA: ${{ steps.cmp.outputs.head }}
+        run: mkdir -p .upstream-watch && echo "$HEAD_SHA" > .upstream-watch/head
+
+      - name: Save notified marker
+        if: steps.cmp.outputs.ahead != '0' && steps.seen.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .upstream-watch
+          key: upstream-watch-${{ steps.cmp.outputs.head }}
