@@ -246,16 +246,10 @@ describe("normalizePlatformQuotasMap", () => {
     expect(result.opencode_go).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
-<<<<<<< HEAD
-  it("无参数时返回全 6 平台全 null", () => {
-    const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(6);
-=======
   it("无参数时返回平台清单中的全部平台全 null", () => {
     const result = normalizePlatformQuotasMap();
     expect(listPlatformIds()).toEqual(quotaPlatforms);
     expect(Object.keys(result)).toEqual(quotaPlatforms);
->>>>>>> v0.2.16^{}
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -303,11 +297,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("缺失平台填充为全 null", () => {
     const result = sanitizePlatformQuotasMap({});
-<<<<<<< HEAD
-    expect(Object.keys(result)).toHaveLength(6);
-=======
     expect(Object.keys(result)).toEqual(quotaPlatforms);
->>>>>>> v0.2.16^{}
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
