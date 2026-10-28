@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 : "${RELEASE_IMAGE:?RELEASE_IMAGE is required}"
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
-: "${COMPOSE_DIR:=/root/edson/sub2api}"
+: "${COMPOSE_DIR:=${HOME}/edson/sub2api}"
 : "${COMPOSE_SERVICE:=sub2api}"
 : "${APP_CONTAINER:=sub2api}"
 : "${POSTGRES_CONTAINER:=sub2api-postgres}"
@@ -29,7 +29,13 @@ docker image inspect "$RELEASE_IMAGE" >/dev/null
 image_version="$(docker run --rm --entrypoint /app/sub2api "$RELEASE_IMAGE" --version 2>&1)"
 grep -Fq "Sub2API ${RELEASE_VERSION}" <<<"$image_version"
 
-current_image="$(docker inspect -f '{{.Config.Image}}' "$APP_CONTAINER")"
+initial_deploy=false
+current_image=""
+if docker container inspect "$APP_CONTAINER" >/dev/null 2>&1; then
+  current_image="$(docker inspect -f '{{.Config.Image}}' "$APP_CONTAINER")"
+else
+  initial_deploy=true
+fi
 stamp="$(date +%Y%m%d-%H%M%S)"
 backup="${BACKUP_DIR}/pre-v${RELEASE_VERSION}-${stamp}"
 install -d -m 700 "$backup"
@@ -41,11 +47,15 @@ docker cp "${REDIS_CONTAINER}:/data/dump.rdb" "${backup}/redis-dump.rdb" >/dev/n
 cp "$OVERRIDE_FILE" "${backup}/docker-compose.override.yml"
 cp docker-compose.yml "${backup}/docker-compose.yml"
 [[ ! -f .env ]] || cp .env "${backup}/.env"
-docker inspect "$APP_CONTAINER" >"${backup}/app.inspect.json"
+if [[ "$initial_deploy" == false ]]; then
+  docker inspect "$APP_CONTAINER" >"${backup}/app.inspect.json"
+fi
 docker inspect "$POSTGRES_CONTAINER" >"${backup}/postgres.inspect.json"
 docker inspect "$REDIS_CONTAINER" >"${backup}/redis.inspect.json"
-printf '%s\n' "$current_image" >"${backup}/old-image.txt"
-docker save "$current_image" | gzip -1 >"${backup}/old-image.tar.gz"
+if [[ "$initial_deploy" == false ]]; then
+  printf '%s\n' "$current_image" >"${backup}/old-image.txt"
+  docker save "$current_image" | gzip -1 >"${backup}/old-image.tar.gz"
+fi
 sha256sum "${backup}"/* >"${backup}/SHA256SUMS"
 chmod -R go-rwx "$backup"
 
@@ -60,8 +70,13 @@ rollback() {
   docker logs "$APP_CONTAINER" >"${backup}/failed-release.log" 2>&1 || true
   cp "${backup}/docker-compose.override.yml" "$OVERRIDE_FILE"
   docker compose config -q
-  docker compose up -d --no-deps --force-recreate "$COMPOSE_SERVICE"
-  echo "release v${RELEASE_VERSION} failed; restored ${current_image}" >&2
+  if [[ "$initial_deploy" == true ]]; then
+    docker compose rm -sf "$COMPOSE_SERVICE" >/dev/null 2>&1 || true
+    echo "initial release v${RELEASE_VERSION} failed; removed application container" >&2
+  else
+    docker compose up -d --no-deps --force-recreate "$COMPOSE_SERVICE"
+    echo "release v${RELEASE_VERSION} failed; restored ${current_image}" >&2
+  fi
   exit "$rc"
 }
 trap rollback ERR
@@ -96,4 +111,5 @@ for _ in $(seq 1 20); do curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null; done
 error_count="$(docker logs --since "$deploy_since" "$APP_CONTAINER" 2>&1 | grep -Eic '"level":"(error|fatal|panic)"|(^|[[:space:]])(ERROR|FATAL|PANIC)([[:space:]]|$)' || true)"
 [[ "$error_count" == 0 ]]
 trap - ERR
-echo "deployed v${RELEASE_VERSION}; image=${RELEASE_IMAGE}; backup=${backup}"
+if [[ "$initial_deploy" == true ]]; then deploy_mode=initial; else deploy_mode=upgrade; fi
+echo "deployed v${RELEASE_VERSION}; mode=${deploy_mode}; image=${RELEASE_IMAGE}; backup=${backup}"
