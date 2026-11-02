@@ -1,6 +1,6 @@
 name: Upstream Watch
 
-# Notify a Lark group when Wei-Shaw/sub2api main has commits this fork does not have yet.
+# Notify a Lark group when Wei-Shaw/sub2api main has commits this fork's release branch does not have yet.
 on:
   schedule:
     - cron: '23 */3 * * *'
@@ -32,7 +32,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:main...${UPSTREAM%%/*}:main" > compare.json
+          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:release...${UPSTREAM%%/*}:main" > compare.json
           gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name > upstream-release.txt || echo unknown > upstream-release.txt
           gh api "repos/$FORK/releases/latest" --jq .tag_name > fork-release.txt || echo none > fork-release.txt
           echo "ahead=$(jq -r .ahead_by compare.json)" >> "$GITHUB_OUTPUT"
@@ -65,7 +65,7 @@ jobs:
           ahead, commits = cmp["ahead_by"], cmp["commits"]
 
           lines = [
-              f"上游 {upstream} 的 main 比 {fork} 超前 {ahead} 个提交",
+              f"上游 {upstream} 的 main 比 {fork} 的 release 超前 {ahead} 个提交",
               f"上游最新 Release：{open('upstream-release.txt').read().strip()}；你的最新 Release：{open('fork-release.txt').read().strip()}",
               "最近的上游提交：",
           ]
@@ -73,7 +73,7 @@ jobs:
               lines.append(f"• {c['sha'][:7]} {c['commit']['message'].splitlines()[0][:100]}")
           if ahead > 10:
               lines.append(f"…另有 {ahead - 10} 个更早的提交")
-          compare_url = f"https://github.com/{fork}/compare/main...{upstream.replace('/', ':')}:main"
+          compare_url = f"https://github.com/{fork}/compare/release...{upstream.replace('/', ':')}:main"
 
           content = [[{"tag": "text", "text": line}] for line in lines]
           content.append([{"tag": "a", "text": "在 GitHub 查看差异", "href": compare_url}])
