@@ -29,7 +29,7 @@ func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) P
 		result.Message = "插件协议版本与当前 Sub2API 不兼容"
 		return result
 	}
-	// Fork releases (x.y.z-ace.N) are judged as their upstream base; semver would
+	// Fork releases (x.y.z-roamai.N) are judged as their upstream base; semver would
 	// otherwise treat the suffix as a prerelease that sorts below x.y.z.
 	hostVersion := stripForkVersionSuffix(host.Version)
 	if !matchesSemverRange(hostVersion, manifest.Requires.Sub2API) {

@@ -173,7 +173,7 @@ release:
     owner: "{{ .Env.GITHUB_REPO_OWNER }}"
     name: "{{ .Env.GITHUB_REPO_NAME }}"
   draft: false
-  # Fork tags (vX.Y.Z-ace.N) are semver prereleases; publish them as regular latest releases.
+  # Fork tags (vX.Y.Z-roamai.N) are semver prereleases; publish them as regular latest releases.
   prerelease: false
   make_latest: true
   name_template: "Sub2API {{.Version}}"

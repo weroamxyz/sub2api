@@ -9162,14 +9162,14 @@ function normalizeGrokMediaSignedContentURLSettings(
 
 const paymentGuideHref = computed(() =>
   locale.value.startsWith("zh")
-    ? "https://github.com/Simooonn/sub2api/blob/main/docs/PAYMENT_CN.md"
-    : "https://github.com/Simooonn/sub2api/blob/main/docs/PAYMENT.md",
+    ? "https://github.com/weroamxyz/sub2api/blob/release/docs/PAYMENT_CN.md"
+    : "https://github.com/weroamxyz/sub2api/blob/release/docs/PAYMENT.md",
 );
 
 const paymentMethodsHref = computed(() =>
   locale.value.startsWith("zh")
-    ? "https://github.com/Simooonn/sub2api/blob/main/docs/PAYMENT_CN.md#支持的支付方式"
-    : "https://github.com/Simooonn/sub2api/blob/main/docs/PAYMENT.md#supported-payment-methods",
+    ? "https://github.com/weroamxyz/sub2api/blob/release/docs/PAYMENT_CN.md#支持的支付方式"
+    : "https://github.com/weroamxyz/sub2api/blob/release/docs/PAYMENT.md#supported-payment-methods",
 );
 
 type SettingsTab =

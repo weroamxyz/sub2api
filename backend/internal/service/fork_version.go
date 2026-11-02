@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// forkVersionSuffix marks releases of the Simooonn/sub2api fork, e.g. "0.2.16-ace.1".
+// forkVersionSuffix marks releases of the weroamxyz/sub2api fork, e.g. "0.2.16-roamai.1".
 // A fork release ranks above the upstream release with the same x.y.z and below the
 // next upstream x.y.z. This intentionally differs from semver prerelease ordering.
-const forkVersionSuffix = "ace"
+const forkVersionSuffix = "roamai"
 
-// parseForkSuffix returns N for a "-ace.N" suffix (N >= 1) and 0 for anything else.
+// parseForkSuffix returns N for a "-roamai.N" suffix (N >= 1) and 0 for anything else.
 func parseForkSuffix(v string) int {
 	_, suffix, ok := strings.Cut(strings.TrimSpace(v), "-")
 	if !ok {
@@ -32,7 +32,7 @@ func parseForkSuffix(v string) int {
 	return n
 }
 
-// stripForkVersionSuffix removes a valid "-ace.N" suffix and returns any other input unchanged.
+// stripForkVersionSuffix removes a valid "-roamai.N" suffix and returns any other input unchanged.
 func stripForkVersionSuffix(v string) string {
 	if parseForkSuffix(v) == 0 {
 		return v

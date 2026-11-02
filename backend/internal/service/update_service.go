@@ -30,7 +30,7 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Simooonn/sub2api"
+	githubRepo     = "weroamxyz/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -638,7 +638,7 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 }
 
 // compareVersions compares two semantic versions; on equal x.y.z, fork releases
-// (-ace.N) rank by N above the plain upstream release.
+// (-roamai.N) rank by N above the plain upstream release.
 func compareVersions(current, latest string) int {
 	currentParts := parseVersion(current)
 	latestParts := parseVersion(latest)

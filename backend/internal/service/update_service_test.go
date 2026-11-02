@@ -122,30 +122,30 @@ func TestUpdateServiceListRollbackVersionsSortsUnorderedInput(t *testing.T) {
 
 func TestUpdateServiceListRollbackVersionsOrdersForkReleases(t *testing.T) {
 	releases := []*GitHubRelease{
-		{TagName: "v0.2.17"},       // newer than current: excluded
-		{TagName: "v0.2.16-ace.2"}, // current: excluded
+		{TagName: "v0.2.17"},          // newer than current: excluded
+		{TagName: "v0.2.16-roamai.2"}, // current: excluded
 		{TagName: "v0.2.16"},
-		{TagName: "v0.2.16-ace.1"},
+		{TagName: "v0.2.16-roamai.1"},
 	}
-	svc := newRollbackTestService("0.2.16-ace.2", releases)
+	svc := newRollbackTestService("0.2.16-roamai.2", releases)
 
 	versions, err := svc.ListRollbackVersions(context.Background())
 
 	require.NoError(t, err)
 	require.Len(t, versions, 2)
-	require.Equal(t, "0.2.16-ace.1", versions[0].Version)
+	require.Equal(t, "0.2.16-roamai.1", versions[0].Version)
 	require.Equal(t, "0.2.16", versions[1].Version)
 }
 
 func TestUpdateServiceCheckUpdateDetectsForkRelease(t *testing.T) {
-	client := &updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v0.2.16-ace.2"}}
-	svc := NewUpdateService(&updateServiceCacheStub{}, client, "0.2.16-ace.1", "release")
+	client := &updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v0.2.16-roamai.2"}}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "0.2.16-roamai.1", "release")
 
 	info, err := svc.CheckUpdate(context.Background(), true)
 
 	require.NoError(t, err)
-	require.Equal(t, "Simooonn/sub2api", client.latestRepo)
-	require.Equal(t, "0.2.16-ace.2", info.LatestVersion)
+	require.Equal(t, "weroamxyz/sub2api", client.latestRepo)
+	require.Equal(t, "0.2.16-roamai.2", info.LatestVersion)
 	require.True(t, info.HasUpdate)
 }
 

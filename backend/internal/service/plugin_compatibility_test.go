@@ -34,12 +34,12 @@ func TestEvaluatePluginCompatibilityTreatsForkReleaseAsUpstreamBase(t *testing.T
 	manifest.Requires.Sub2API = ">=0.2.16"
 	manifest.Requires.TestedSub2APIVersions = []string{"0.2.16"}
 
-	result := EvaluatePluginCompatibility(manifest, PluginHostInfo{Version: "0.2.16-ace.1", BuildType: "release"})
+	result := EvaluatePluginCompatibility(manifest, PluginHostInfo{Version: "0.2.16-roamai.1", BuildType: "release"})
 
 	require.True(t, result.Compatible)
 	assert.True(t, result.Tested)
 	assert.Equal(t, "compatible", result.Status)
-	assert.Equal(t, "0.2.16-ace.1", result.CurrentSub2API)
+	assert.Equal(t, "0.2.16-roamai.1", result.CurrentSub2API)
 }
 
 func TestEvaluatePluginCompatibilityRejectsProtocolMismatch(t *testing.T) {
