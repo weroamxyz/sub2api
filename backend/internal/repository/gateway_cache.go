@@ -164,6 +164,7 @@ var _ service.OpenAIWSSessionPreemptionCache = (*gatewayCache)(nil)
 const (
 	grokVideoPendingBillingPrefix = "grok_video_pending:"
 	grokVideoBilledPrefix         = "grok_video_billed:"
+	grokMediaObjectURLPrefix      = "grok_media_object_url:"
 )
 
 func (c *gatewayCache) SetGrokVideoPendingBilling(ctx context.Context, key string, payload []byte, ttl time.Duration) error {
@@ -221,6 +222,39 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 		return errors.New("invalid grok video billed key")
 	}
 	return c.rdb.Del(ctx, grokVideoBilledPrefix+key).Err()
+}
+
+func (c *gatewayCache) GetGrokMediaObjectURL(ctx context.Context, requestID string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return "", errors.New("invalid grok media object URL key")
+	}
+	value, err := c.rdb.Get(ctx, grokMediaObjectURLPrefix+requestID).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func (c *gatewayCache) SetGrokMediaObjectURL(ctx context.Context, requestID, objectURL string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	requestID = strings.TrimSpace(requestID)
+	objectURL = strings.TrimSpace(objectURL)
+	if requestID == "" || objectURL == "" {
+		return errors.New("invalid grok media object URL payload")
+	}
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	return c.rdb.Set(ctx, grokMediaObjectURLPrefix+requestID, objectURL, ttl).Err()
 }
 
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.

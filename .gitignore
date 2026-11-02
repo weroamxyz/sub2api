@@ -56,6 +56,11 @@ pnpm-debug.log*
 !.env.example
 docker-compose.override.yml
 
+# 本地部署凭据与服务器登录信息
+/info.md
+/server-info*.md
+/credentials.local.*
+
 # ===================
 # IDE / 编辑器
 # ===================

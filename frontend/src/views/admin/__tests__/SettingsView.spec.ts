@@ -222,6 +222,15 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.upstreamCostWeight": "计费倍率",
     "admin.settings.openaiExperimentalScheduler.previousResponseWeight": "previous_response 粘性",
     "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
+    "admin.settings.gatewayForwarding.grokSignedContentURL": "Grok 视频签名下载 URL",
+    "admin.settings.gatewayForwarding.grokSignedContentURLHint": "开启后，Grok 视频任务查询返回短期有效的免 API Key 下载地址。",
+    "admin.settings.gatewayForwarding.grokSignedContentTTL": "有效期（秒）",
+    "admin.settings.gatewayForwarding.grokSignedContentTTLHint": "建议 300–3600 秒。",
+    "admin.settings.gatewayForwarding.grokSignedContentTTLInvalid": "Grok 视频签名下载 URL 有效期必须为正整数。",
+    "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURL": "公开 Base URL",
+    "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLPlaceholder": "https://api.example.com",
+    "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLHint": "可留空使用当前请求的 Host。",
+    "admin.settings.gatewayForwarding.grokSignedContentPublicBaseURLInvalid": "Grok 视频签名下载 URL 的公开 Base URL 必须是 http(s) 绝对地址。",
     "admin.settings.upstreamBillingProbe.title": "上游倍率自动探测",
     "admin.settings.upstreamBillingProbe.description": "定期获取 OpenAI API Key 所连接上游 Sub2API 站点声明的计费倍率。",
     "admin.settings.upstreamBillingProbe.enabled": "启用全局自动探测",
@@ -477,6 +486,11 @@ const baseSettingsResponse = {
   enable_client_dateline_normalization: true,
   antigravity_user_agent_version: "",
   openai_codex_user_agent: "",
+  grok_media_signed_content_url_settings: {
+    enabled: false,
+    ttl_seconds: 3600,
+    public_base_url: "",
+  },
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,
@@ -1311,6 +1325,48 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         antigravity_user_agent_version: "1.23.2",
+      }),
+    );
+  });
+
+  it("loads and submits Grok video signed content URL gateway settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      grok_media_signed_content_url_settings: {
+        enabled: false,
+        ttl_seconds: 1800,
+        public_base_url: "https://old.example.com",
+      },
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const card = wrapper.get('[data-testid="grok-media-signed-content-url-settings"]');
+    expect(card.isVisible()).toBe(true);
+    expect(card.text()).toContain("Grok 视频签名下载 URL");
+    expect(
+      (card.get('[data-testid="grok-media-signed-content-url-enabled"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+
+    await card.get('[data-testid="grok-media-signed-content-url-enabled"]').setValue(true);
+    await card.get('[data-testid="grok-media-signed-content-url-ttl"]').setValue(900);
+    await card
+      .get('[data-testid="grok-media-signed-content-url-public-base"]')
+      .setValue("https://cdn.example.com/");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grok_media_signed_content_url_settings: {
+          enabled: true,
+          ttl_seconds: 900,
+          public_base_url: "https://cdn.example.com",
+        },
       }),
     );
   });

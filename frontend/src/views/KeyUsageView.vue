@@ -537,6 +537,9 @@ const RING_GRADIENTS = [
 
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
+let ringAnimationTimer: ReturnType<typeof setTimeout> | null = null
+const ringAnimationFrames = new Set<number>()
+let componentUnmounted = false
 
 const ringTrackColor = computed(() => isDark.value ? '#222222' : '#F0F0EE')
 
@@ -555,13 +558,37 @@ function getRingOffset(ring: RingItem): number {
   return CIRCUMFERENCE - (Math.min(ring.pct, 100) / 100) * CIRCUMFERENCE
 }
 
+function cancelRingAnimation() {
+  if (ringAnimationTimer) {
+    clearTimeout(ringAnimationTimer)
+    ringAnimationTimer = null
+  }
+  if (typeof cancelAnimationFrame === 'function') {
+    ringAnimationFrames.forEach(frameId => cancelAnimationFrame(frameId))
+  }
+  ringAnimationFrames.clear()
+}
+
+function scheduleAnimationFrame(callback: (timestamp: number) => void) {
+  if (componentUnmounted || typeof requestAnimationFrame !== 'function') return
+  let frameId = 0
+  frameId = requestAnimationFrame(timestamp => {
+    ringAnimationFrames.delete(frameId)
+    if (!componentUnmounted) callback(timestamp)
+  })
+  ringAnimationFrames.add(frameId)
+}
+
 function triggerRingAnimation(items: RingItem[]) {
+  cancelRingAnimation()
   ringAnimated.value = false
   displayPcts.value = items.map(() => 0)
 
   nextTick(() => {
-    requestAnimationFrame(() => {
-      setTimeout(() => {
+    scheduleAnimationFrame(() => {
+      ringAnimationTimer = setTimeout(() => {
+        ringAnimationTimer = null
+        if (componentUnmounted) return
         ringAnimated.value = true
 
         // Animate percentage numbers
@@ -574,9 +601,9 @@ function triggerRingAnimation(items: RingItem[]) {
           const p = Math.min(elapsed / duration, 1)
           const ease = 1 - Math.pow(1 - p, 3)
           displayPcts.value = targets.map(target => Math.round(ease * target))
-          if (p < 1) requestAnimationFrame(tick)
+          if (p < 1) scheduleAnimationFrame(tick)
         }
-        requestAnimationFrame(tick)
+        scheduleAnimationFrame(tick)
       }, 50)
     })
   })
@@ -931,6 +958,7 @@ function formatResetTime(resetAt: string | null | undefined): string {
 }
 
 onMounted(() => {
+  componentUnmounted = false
   initTheme()
   if (!appStore.publicSettingsLoaded) {
     appStore.fetchPublicSettings()
@@ -939,6 +967,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  componentUnmounted = true
+  cancelRingAnimation()
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>

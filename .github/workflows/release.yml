@@ -375,6 +375,68 @@ jobs:
                 disable_web_page_preview: true
               }')"
 
+  deploy-production:
+    needs: [prepare, release]
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'weroamxyz/sub2api' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    environment: production
+    env:
+      RELEASE_IMAGE: ghcr.io/${{ needs.prepare.outputs.owner_lower }}/sub2api:${{ needs.prepare.outputs.version }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+      PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+      SSHPASS: ${{ secrets.PROD_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Validate production deployment secrets
+        run: |
+          test -n "$PROD_SSH_HOST"
+          test -n "$PROD_SSH_USER"
+          test -n "$PROD_SSH_PRIVATE_KEY" || test -n "$SSHPASS"
+          test -n "${{ secrets.PROD_SSH_KNOWN_HOSTS }}"
+      - name: Install SSH client helper
+        if: ${{ env.PROD_SSH_PRIVATE_KEY == '' }}
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+      - name: Configure pinned production host key
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.PROD_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if [[ -n "$PROD_SSH_PRIVATE_KEY" ]]; then
+            printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > ~/.ssh/prod_key
+            chmod 600 ~/.ssh/prod_key
+          fi
+      - name: Pull and verify the tagged release image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$RELEASE_IMAGE"
+          test "$(docker image inspect "$RELEASE_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$RELEASE_SHA"
+      - name: Transfer release image and deploy
+        run: |
+          ssh_opts=(-o StrictHostKeyChecking=yes)
+          if [[ -n "$PROD_SSH_PRIVATE_KEY" ]]; then
+            ssh_opts+=(-o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -i ~/.ssh/prod_key -o IdentitiesOnly=yes)
+            scp "${ssh_opts[@]}" deploy/production-tag-deploy.sh "$PROD_SSH_USER@$PROD_SSH_HOST:/tmp/sub2api-production-tag-deploy.sh"
+            docker save "$RELEASE_IMAGE" | gzip -1 | ssh "${ssh_opts[@]}" "$PROD_SSH_USER@$PROD_SSH_HOST" 'gzip -dc | docker load'
+            ssh "${ssh_opts[@]}" "$PROD_SSH_USER@$PROD_SSH_HOST" \
+              "chmod 700 /tmp/sub2api-production-tag-deploy.sh && RELEASE_IMAGE='$RELEASE_IMAGE' RELEASE_VERSION='$RELEASE_VERSION' /tmp/sub2api-production-tag-deploy.sh; rc=\$?; rm -f /tmp/sub2api-production-tag-deploy.sh; exit \$rc"
+          else
+            ssh_opts+=(-o BatchMode=no)
+            sshpass -e scp "${ssh_opts[@]}" deploy/production-tag-deploy.sh "$PROD_SSH_USER@$PROD_SSH_HOST:/tmp/sub2api-production-tag-deploy.sh"
+            docker save "$RELEASE_IMAGE" | gzip -1 | sshpass -e ssh "${ssh_opts[@]}" "$PROD_SSH_USER@$PROD_SSH_HOST" 'gzip -dc | docker load'
+            sshpass -e ssh "${ssh_opts[@]}" "$PROD_SSH_USER@$PROD_SSH_HOST" \
+              "chmod 700 /tmp/sub2api-production-tag-deploy.sh && RELEASE_IMAGE='$RELEASE_IMAGE' RELEASE_VERSION='$RELEASE_VERSION' /tmp/sub2api-production-tag-deploy.sh; rc=\$?; rm -f /tmp/sub2api-production-tag-deploy.sh; exit \$rc"
+          fi
+
   sync-version-file:
     needs: [prepare, release]
     if: ${{ needs.release.result == 'success' && needs.prepare.outputs.dry_run != 'true' }}

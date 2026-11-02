@@ -51,6 +51,90 @@ func (h *OpenAIGatewayHandler) GrokVideoContent(c *gin.Context) {
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideoContent, c.Param("request_id"))
 }
 
+// GrokVideoContentSigned proxies downloadable video content through a
+// short-lived URL token without requiring the caller's API key.
+func (h *OpenAIGatewayHandler) GrokVideoContentSigned(c *gin.Context) {
+	streamStarted := false
+	defer h.recoverResponsesPanic(c, &streamStarted)
+
+	requestStart := time.Now()
+	requestID := strings.TrimSpace(c.Param("request_id"))
+	reqLog := requestLogger(
+		c,
+		"handler.openai_gateway.grok_media_signed_content",
+		zap.String("endpoint", string(service.GrokMediaEndpointVideoContent)),
+		zap.String("request_id", requestID),
+	)
+	if h == nil || h.gatewayService == nil {
+		reqLog.Error("grok_media.signed_content_dependencies_missing")
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
+		return
+	}
+	if requestID == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "request_id is required")
+		return
+	}
+
+	setOpsRequestContext(c, "", false)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+
+	account, err := h.gatewayService.ResolveGrokMediaSignedVideoContentAccount(
+		c.Request.Context(),
+		requestID,
+		c.Query("token"),
+	)
+	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrGrokMediaSignedContentInvalid), errors.Is(err, service.ErrGrokMediaSignedContentExpired):
+			h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid or expired video content URL")
+		case errors.Is(err, service.ErrGrokMediaSignedContentDisabled):
+			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video content URL not found")
+		case errors.Is(err, service.ErrGrokMediaSignedContentAccount):
+			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
+		default:
+			reqLog.Warn("grok_media.signed_content_account_resolve_failed", zap.Error(err))
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
+		}
+		return
+	}
+
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	forwardStart := time.Now()
+	result, err := h.gatewayService.ForwardGrokMedia(
+		requestCtx,
+		c,
+		account,
+		service.GrokMediaEndpointVideoContent,
+		requestID,
+		nil,
+		"",
+	)
+	service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
+	if err != nil {
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(err, &failoverErr) {
+			h.handleFailoverExhausted(c, failoverErr, streamStarted)
+			return
+		}
+		if !service.IsResponseCommitted(c) {
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+		}
+		reqLog.Warn("grok_media.signed_content_forward_failed",
+			zap.Int64("account_id", account.ID),
+			zap.Error(err),
+		)
+		return
+	}
+	if result != nil {
+		reqLog.Debug("grok_media.signed_content_completed",
+			zap.Int64("account_id", account.ID),
+			zap.String("upstream_request_id", result.RequestID),
+		)
+	}
+}
+
 func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.GrokMediaEndpoint, requestID string) {
 	platform := service.PlatformGrok
 	noAccountCode, noAccountMessage := "grok_media_no_eligible_account", "No eligible Grok media accounts"

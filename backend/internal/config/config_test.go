@@ -470,6 +470,64 @@ func TestLoadOpenAIFirstOutputTimeoutsFromEnv(t *testing.T) {
 	require.Equal(t, 240, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
 }
 
+func TestLoadGrokMediaSignedContentURLFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_GROK_MEDIA_SIGNED_CONTENT_URL_ENABLED", "true")
+	t.Setenv("GATEWAY_GROK_MEDIA_SIGNED_CONTENT_URL_TTL_SECONDS", "1800")
+	t.Setenv("GATEWAY_GROK_MEDIA_SIGNED_CONTENT_URL_SECRET", "grok-media-secret")
+	t.Setenv("GATEWAY_GROK_MEDIA_SIGNED_CONTENT_URL_PUBLIC_BASE_URL", "https://api.example.com/")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.GrokMedia.SignedContentURL.Enabled)
+	require.Equal(t, 1800, cfg.Gateway.GrokMedia.SignedContentURL.TTLSeconds)
+	require.Equal(t, "grok-media-secret", cfg.Gateway.GrokMedia.SignedContentURL.Secret)
+	require.Equal(t, "https://api.example.com", cfg.Gateway.GrokMedia.SignedContentURL.PublicBaseURL)
+}
+
+func TestLoadGrokMediaObjectStorageFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_ENABLED", "true")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_ENDPOINT", "https://storage.bunnycdn.com")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_REGION", "auto")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_BUCKET", "grok-media")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_ACCESS_KEY_ID", "bunny-access-key")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_SECRET_ACCESS_KEY", "bunny-secret")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_PREFIX", "/grok/")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_FORCE_PATH_STYLE", "true")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_PUBLIC_BASE_URL", "https://cdn.example.com/")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_PRESIGN_EXPIRY_HOURS", "12")
+	t.Setenv("GATEWAY_GROK_MEDIA_OBJECT_STORAGE_MAX_DOWNLOAD_BYTES", "1048576")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	storage := cfg.Gateway.GrokMedia.ObjectStorage
+	require.True(t, storage.Enabled)
+	require.Equal(t, "https://storage.bunnycdn.com", storage.Endpoint)
+	require.Equal(t, "auto", storage.Region)
+	require.Equal(t, "grok-media", storage.Bucket)
+	require.Equal(t, "bunny-access-key", storage.AccessKeyID)
+	require.Equal(t, "bunny-secret", storage.SecretAccessKey)
+	require.Equal(t, "grok/", storage.Prefix)
+	require.True(t, storage.ForcePathStyle)
+	require.Equal(t, "https://cdn.example.com", storage.PublicBaseURL)
+	require.Equal(t, 12, storage.PresignExpiry)
+	require.Equal(t, int64(1048576), storage.MaxDownloadByte)
+	require.True(t, storage.Active())
+}
+
+func TestValidateGrokMediaObjectStorageRequiresCredentialsWhenEnabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Gateway.GrokMedia.ObjectStorage.Enabled = true
+	err = cfg.Validate()
+
+	require.ErrorContains(t, err, "gateway.grok_media.object_storage is enabled")
+	require.ErrorContains(t, err, "gateway.grok_media.object_storage.bucket")
+}
+
 func TestValidateOpenAIFirstOutputTimeoutMinimum(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	cfg, err := Load()

@@ -349,6 +349,9 @@ type SystemSettings struct {
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
+	// Grok video signed content URL behavior
+	GrokMediaSignedContentURLSettings *GrokMediaSignedContentURLSettings `json:"grok_media_signed_content_url_settings,omitempty"`
+
 	// 系统全局默认平台配额（key = platform，nil/缺省 = 不限制）
 	DefaultPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"default_platform_quotas,omitempty"`
 
@@ -362,6 +365,14 @@ type SystemSettings struct {
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
+}
+
+// GrokMediaSignedContentURLSettings configures short-lived public Grok video
+// content proxy URLs.
+type GrokMediaSignedContentURLSettings struct {
+	Enabled       bool   `json:"enabled"`
+	TTLSeconds    int    `json:"ttl_seconds"`
+	PublicBaseURL string `json:"public_base_url"`
 }
 
 type PublicSettings struct {

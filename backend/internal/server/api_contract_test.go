@@ -892,6 +892,11 @@ func TestAPIContracts(t *testing.T) {
 					"grok_default_text_model": "grok-4.6",
 					"grok_default_base_url_mode": "cli",
 					"grok_cross_client_model_map_enabled": true,
+					"grok_media_signed_content_url_settings": {
+						"enabled": false,
+						"ttl_seconds": 3600,
+						"public_base_url": ""
+					},
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
 					"table_default_page_size": 20,
@@ -1186,6 +1191,11 @@ func TestAPIContracts(t *testing.T) {
 					"grok_default_text_model": "grok-4.6",
 					"grok_default_base_url_mode": "cli",
 					"grok_cross_client_model_map_enabled": true,
+					"grok_media_signed_content_url_settings": {
+						"enabled": false,
+						"ttl_seconds": 3600,
+						"public_base_url": ""
+					},
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
 					"table_default_page_size": 20,

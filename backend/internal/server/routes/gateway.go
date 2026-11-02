@@ -176,6 +176,12 @@ func RegisterGatewayRoutes(
 		}
 	}
 
+	// Signed Grok video content URLs are intentionally separate from the
+	// authenticated /videos/:request_id/content route. This preserves existing
+	// API-key behavior while allowing downstream routers to fetch returned URLs
+	// without knowing the caller's key.
+	r.GET("/v1/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, h.OpenAIGateway.GrokVideoContentSigned)
+
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	gateway.Use(bodyLimit)
@@ -434,6 +440,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/videos/edits/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/extensions/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/:request_id", bodyLimit, videoStatusHandler)
+	r.GET("/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, h.OpenAIGateway.GrokVideoContentSigned)
 	rootRoute(http.MethodGet, "/videos/:request_id/content", bodyLimit, videoContentHandler)
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {

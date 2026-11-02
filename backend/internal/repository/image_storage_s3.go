@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type S3ImageStorage struct {
 }
 
 var _ service.ImageStorage = (*S3ImageStorage)(nil)
+var _ service.StreamingImageStorage = (*S3ImageStorage)(nil)
 
 // NewS3ImageStorage 依据配置构造 S3 图片存储（调用方应先确认 cfg.Active()）。
 func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3ImageStorage, error) {
@@ -52,13 +54,23 @@ func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3
 
 // Save 上传图片字节，返回可访问 URL：配了 public_base_url 则返回公开直链，否则返回 presigned 临时链接。
 func (s *S3ImageStorage) Save(ctx context.Context, key, contentType string, data []byte) (string, error) {
+	return s.SaveStream(ctx, key, contentType, bytes.NewReader(data), int64(len(data)))
+}
+
+// SaveStream uploads object bytes from a stream and returns a public or
+// presigned URL using the same policy as Save.
+func (s *S3ImageStorage) SaveStream(ctx context.Context, key, contentType string, body io.Reader, contentLength int64) (string, error) {
 	finish := servertiming.ObserveDependency(ctx, "s3")
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+	input := &s3.PutObjectInput{
 		Bucket:      &s.bucket,
 		Key:         &key,
-		Body:        bytes.NewReader(data),
+		Body:        body,
 		ContentType: &contentType,
-	})
+	}
+	if contentLength >= 0 {
+		input.ContentLength = &contentLength
+	}
+	_, err := s.client.PutObject(ctx, input)
 	finish()
 	if err != nil {
 		return "", fmt.Errorf("S3 PutObject: %w", err)

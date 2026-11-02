@@ -1028,6 +1028,86 @@ const (
 	ImageConcurrencyOverflowModeWait   = "wait"
 )
 
+// GatewayGrokMediaConfig controls Grok image/video compatibility behavior.
+type GatewayGrokMediaConfig struct {
+	// SignedContentURL exposes video content through short-lived signed proxy URLs.
+	SignedContentURL GatewayGrokMediaSignedContentURLConfig `mapstructure:"signed_content_url"`
+	// ObjectStorage offloads completed Grok video files to S3-compatible object
+	// storage such as Bunny Storage and returns the storage/CDN URL in video status.
+	ObjectStorage GatewayGrokMediaObjectStorageConfig `mapstructure:"object_storage"`
+}
+
+// GatewayGrokMediaSignedContentURLConfig controls public video content URLs.
+type GatewayGrokMediaSignedContentURLConfig struct {
+	// Enabled keeps the feature opt-in so existing deployments retain the
+	// authenticated /videos/{id}/content behavior unless configured otherwise.
+	Enabled bool `mapstructure:"enabled"`
+	// TTLSeconds is the lifetime of generated signed video content URLs.
+	TTLSeconds int `mapstructure:"ttl_seconds"`
+	// Secret signs generated URLs. When empty, jwt.secret is used.
+	Secret string `mapstructure:"secret"`
+	// PublicBaseURL is the externally reachable API origin, for example
+	// https://api.example.com. When empty, the request Host is used.
+	PublicBaseURL string `mapstructure:"public_base_url"`
+}
+
+// GatewayGrokMediaObjectStorageConfig controls offloading completed Grok video
+// content to S3-compatible object storage.
+type GatewayGrokMediaObjectStorageConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	Endpoint        string `mapstructure:"endpoint"`
+	Region          string `mapstructure:"region"`
+	Bucket          string `mapstructure:"bucket"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	Prefix          string `mapstructure:"prefix"`
+	ForcePathStyle  bool   `mapstructure:"force_path_style"`
+	PublicBaseURL   string `mapstructure:"public_base_url"`
+	PresignExpiry   int    `mapstructure:"presign_expiry_hours"`
+	MaxDownloadByte int64  `mapstructure:"max_download_bytes"`
+}
+
+func (c *GatewayGrokMediaObjectStorageConfig) IsConfigured() bool {
+	return c.Bucket != "" && c.AccessKeyID != "" && c.SecretAccessKey != ""
+}
+
+func (c *GatewayGrokMediaObjectStorageConfig) Active() bool {
+	return c.Enabled && c.IsConfigured()
+}
+
+func (c *GatewayGrokMediaObjectStorageConfig) MissingCredentialKeys() []string {
+	var missing []string
+	if c.Bucket == "" {
+		missing = append(missing, "gateway.grok_media.object_storage.bucket")
+	}
+	if c.AccessKeyID == "" {
+		missing = append(missing, "gateway.grok_media.object_storage.access_key_id")
+	}
+	if c.SecretAccessKey == "" {
+		missing = append(missing, "gateway.grok_media.object_storage.secret_access_key")
+	}
+	return missing
+}
+
+func (c *GatewayGrokMediaObjectStorageConfig) ToImageStorageConfig() ImageStorageConfig {
+	if c == nil {
+		return ImageStorageConfig{}
+	}
+	return ImageStorageConfig{
+		Enabled:         c.Enabled,
+		Endpoint:        c.Endpoint,
+		Region:          c.Region,
+		Bucket:          c.Bucket,
+		AccessKeyID:     c.AccessKeyID,
+		SecretAccessKey: c.SecretAccessKey,
+		Prefix:          c.Prefix,
+		ForcePathStyle:  c.ForcePathStyle,
+		PublicBaseURL:   c.PublicBaseURL,
+		PresignExpiry:   c.PresignExpiry,
+		MaxDownloadByte: c.MaxDownloadByte,
+	}
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// MinOutputTokens is the minimum max_output_tokens used when
@@ -1105,6 +1185,8 @@ type GatewayConfig struct {
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
+	// GrokMedia: Grok image/video compatibility configuration.
+	GrokMedia GatewayGrokMediaConfig `mapstructure:"grok_media"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -2581,6 +2663,21 @@ func setDefaults() {
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
 	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
+	viper.SetDefault("gateway.grok_media.signed_content_url.enabled", false)
+	viper.SetDefault("gateway.grok_media.signed_content_url.ttl_seconds", 3600)
+	viper.SetDefault("gateway.grok_media.signed_content_url.secret", "")
+	viper.SetDefault("gateway.grok_media.signed_content_url.public_base_url", "")
+	viper.SetDefault("gateway.grok_media.object_storage.enabled", false)
+	viper.SetDefault("gateway.grok_media.object_storage.endpoint", "")
+	viper.SetDefault("gateway.grok_media.object_storage.region", "auto")
+	viper.SetDefault("gateway.grok_media.object_storage.bucket", "")
+	viper.SetDefault("gateway.grok_media.object_storage.access_key_id", "")
+	viper.SetDefault("gateway.grok_media.object_storage.secret_access_key", "")
+	viper.SetDefault("gateway.grok_media.object_storage.prefix", "grok-media/")
+	viper.SetDefault("gateway.grok_media.object_storage.force_path_style", false)
+	viper.SetDefault("gateway.grok_media.object_storage.public_base_url", "")
+	viper.SetDefault("gateway.grok_media.object_storage.presign_expiry_hours", 24)
+	viper.SetDefault("gateway.grok_media.object_storage.max_download_bytes", int64(512*1024*1024))
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
@@ -3439,6 +3536,74 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 1800 ||
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
+	}
+	c.Gateway.GrokMedia.SignedContentURL.Secret = strings.TrimSpace(c.Gateway.GrokMedia.SignedContentURL.Secret)
+	c.Gateway.GrokMedia.SignedContentURL.PublicBaseURL = strings.TrimRight(strings.TrimSpace(c.Gateway.GrokMedia.SignedContentURL.PublicBaseURL), "/")
+	if c.Gateway.GrokMedia.SignedContentURL.Enabled {
+		if c.Gateway.GrokMedia.SignedContentURL.TTLSeconds <= 0 {
+			return fmt.Errorf("gateway.grok_media.signed_content_url.ttl_seconds must be positive when enabled")
+		}
+		if c.Gateway.GrokMedia.SignedContentURL.Secret == "" && strings.TrimSpace(c.JWT.Secret) == "" {
+			return fmt.Errorf("gateway.grok_media.signed_content_url.secret or jwt.secret is required when enabled")
+		}
+		if c.Gateway.GrokMedia.SignedContentURL.PublicBaseURL != "" {
+			if err := ValidateAbsoluteHTTPURL(c.Gateway.GrokMedia.SignedContentURL.PublicBaseURL); err != nil {
+				return fmt.Errorf("gateway.grok_media.signed_content_url.public_base_url invalid: %w", err)
+			}
+			u, err := url.Parse(c.Gateway.GrokMedia.SignedContentURL.PublicBaseURL)
+			if err != nil {
+				return fmt.Errorf("gateway.grok_media.signed_content_url.public_base_url invalid: %w", err)
+			}
+			if u.RawQuery != "" || u.ForceQuery {
+				return fmt.Errorf("gateway.grok_media.signed_content_url.public_base_url invalid: must not include query")
+			}
+			if u.User != nil {
+				return fmt.Errorf("gateway.grok_media.signed_content_url.public_base_url invalid: must not include userinfo")
+			}
+		}
+	}
+	grokObjectStorage := &c.Gateway.GrokMedia.ObjectStorage
+	grokObjectStorage.Endpoint = strings.TrimSpace(grokObjectStorage.Endpoint)
+	grokObjectStorage.Region = strings.TrimSpace(grokObjectStorage.Region)
+	if grokObjectStorage.Region == "" {
+		grokObjectStorage.Region = "auto"
+	}
+	grokObjectStorage.Bucket = strings.TrimSpace(grokObjectStorage.Bucket)
+	grokObjectStorage.AccessKeyID = strings.TrimSpace(grokObjectStorage.AccessKeyID)
+	grokObjectStorage.SecretAccessKey = strings.TrimSpace(grokObjectStorage.SecretAccessKey)
+	grokObjectStorage.Prefix = strings.Trim(strings.TrimSpace(grokObjectStorage.Prefix), "/")
+	if grokObjectStorage.Prefix != "" {
+		grokObjectStorage.Prefix += "/"
+	}
+	grokObjectStorage.PublicBaseURL = strings.TrimRight(strings.TrimSpace(grokObjectStorage.PublicBaseURL), "/")
+	if grokObjectStorage.PresignExpiry <= 0 {
+		grokObjectStorage.PresignExpiry = 24
+	}
+	if grokObjectStorage.MaxDownloadByte <= 0 {
+		grokObjectStorage.MaxDownloadByte = 512 * 1024 * 1024
+	}
+	if grokObjectStorage.Enabled {
+		if !grokObjectStorage.IsConfigured() {
+			return fmt.Errorf("gateway.grok_media.object_storage is enabled but missing required keys: %s", strings.Join(grokObjectStorage.MissingCredentialKeys(), ", "))
+		}
+		if grokObjectStorage.MaxDownloadByte <= 0 {
+			return fmt.Errorf("gateway.grok_media.object_storage.max_download_bytes must be positive")
+		}
+		if grokObjectStorage.PublicBaseURL != "" {
+			if err := ValidateAbsoluteHTTPURL(grokObjectStorage.PublicBaseURL); err != nil {
+				return fmt.Errorf("gateway.grok_media.object_storage.public_base_url invalid: %w", err)
+			}
+			u, err := url.Parse(grokObjectStorage.PublicBaseURL)
+			if err != nil {
+				return fmt.Errorf("gateway.grok_media.object_storage.public_base_url invalid: %w", err)
+			}
+			if u.RawQuery != "" || u.ForceQuery {
+				return fmt.Errorf("gateway.grok_media.object_storage.public_base_url invalid: must not include query")
+			}
+			if u.User != nil {
+				return fmt.Errorf("gateway.grok_media.object_storage.public_base_url invalid: must not include userinfo")
+			}
+		}
 	}
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {
 		c.Gateway.Live.MaxSessionDurationSeconds = 3600
