@@ -1,6 +1,7 @@
 name: Upstream Watch
 
 # Notify a Lark group when Wei-Shaw/sub2api main has commits this fork's release branch does not have yet.
+# Scheduled runs use the default branch (main); compare the production release branch.
 on:
   schedule:
     - cron: '23 */3 * * *'
@@ -26,18 +27,19 @@ jobs:
     env:
       UPSTREAM: Wei-Shaw/sub2api
       FORK: ${{ github.repository }}
+      FORK_BRANCH: release
     steps:
-      - name: Compare fork main with upstream main
+      - name: Compare fork release branch with upstream main
         id: cmp
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:release...${UPSTREAM%%/*}:main" > compare.json
+          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:$FORK_BRANCH...${UPSTREAM%%/*}:main" > compare.json
           gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name > upstream-release.txt || echo unknown > upstream-release.txt
           gh api "repos/$FORK/releases/latest" --jq .tag_name > fork-release.txt || echo none > fork-release.txt
           echo "ahead=$(jq -r .ahead_by compare.json)" >> "$GITHUB_OUTPUT"
           echo "head=$(jq -r '.commits[-1].sha // ""' compare.json)" >> "$GITHUB_OUTPUT"
-          echo "Upstream is $(jq -r .ahead_by compare.json) commit(s) ahead of $FORK"
+          echo "Upstream main is $(jq -r .ahead_by compare.json) commit(s) ahead of $FORK:$FORK_BRANCH"
 
       - name: Check whether this upstream head was already notified
         id: seen
