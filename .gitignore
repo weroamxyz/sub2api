@@ -161,6 +161,8 @@ docs/screenshots/*
 !docs/screenshots/codex-referral-success.png
 .serena/
 .codex/
+.omc/
+.spec-workflow/
 frontend/coverage/
 aicodex
 output/
