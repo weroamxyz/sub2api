@@ -309,6 +309,9 @@ var systemIdentityOpeners = []*regexp.Regexp{
 // Only Antigravity forwarding should use this; native Anthropic may require attribution.
 func NeutralizeSystemIdentity(text string) string {
 	text = stripClaudeAttribution(text)
+	// Applied before the identity rewrite below: that path returns early, so a
+	// system block opening with "You are Claude Code" would otherwise skip this.
+	text = neutralizeUpstreamBlockedPolicy(text)
 	for _, re := range systemIdentityOpeners {
 		if loc := re.FindStringIndex(text); loc != nil {
 			if strings.HasPrefix(text[loc[1]:], ",") {
