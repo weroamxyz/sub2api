@@ -1275,6 +1275,8 @@ type GatewayConfig struct {
 	// Gemini 同账号重试次数（429/5xx 等可重试错误在换号前对同一账号的重发次数，不含首次请求）
 	MaxSameAccountRetriesGemini int `mapstructure:"max_same_account_retries_gemini"`
 
+	// Let the upstream decide whether to stream thought summaries on Antigravity Gemini compatibility requests.
+	AntigravityGeminiOmitIncludeThoughts bool `mapstructure:"antigravity_gemini_omit_include_thoughts"`
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`
 
@@ -2718,6 +2720,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_media.object_storage.public_base_url", "")
 	viper.SetDefault("gateway.grok_media.object_storage.presign_expiry_hours", 24)
 	viper.SetDefault("gateway.grok_media.object_storage.max_download_bytes", int64(512*1024*1024))
+	viper.SetDefault("gateway.antigravity_gemini_omit_include_thoughts", false)
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
